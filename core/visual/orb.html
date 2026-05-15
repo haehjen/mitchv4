@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MITCH Interface</title>
+
+  <style>
+    :root{
+      --chat-blue: rgba(74, 159, 255, 0.26);
+      --edge-glow: rgba(104, 210, 255, 0.24);
+      --panel-bg: rgba(8, 14, 24, 0.78);
+      --panel-bg-strong: rgba(5, 10, 18, 0.9);
+      --panel-text: #d7ecff;
+      --muted-text: #8ca4bc;
+      --accent: #7ee7ff;
+      --accent-strong: #66b6ff;
+      --radius: 20px;
+      --z-chat: 100; --z-site: 60; --z-log: 40;
+      --edge: 24px;
+      --gap: 16px;
+      --left-w: clamp(460px, 40vw, 720px);
+      --right-w: clamp(420px, 34vw, 720px);
+      --youtube-w: var(--left-w);
+      --youtube-h: clamp(290px, 34vh, 420px);
+      --work-w: var(--right-w);
+      --work-h: calc(100vh - (var(--edge) * 2) - var(--console-h) - var(--token-h) - (var(--gap) * 2));
+      --side-w: var(--right-w);
+      --token-h: 136px;
+      --console-h: 276px;
+      --vision-w: clamp(260px, 18vw, 340px);
+      --vision-h: 196px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at top left, rgba(23, 71, 129, 0.42), transparent 34%),
+        radial-gradient(circle at 85% 14%, rgba(0, 118, 143, 0.22), transparent 24%),
+        linear-gradient(180deg, #03070d 0%, #07111d 48%, #03060b 100%);
+      color:var(--panel-text);
+      font-family:"IBM Plex Mono","Azeret Mono","Space Mono","SFMono-Regular",ui-monospace,monospace;
+      overflow:hidden
+    }
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      background:
+        linear-gradient(rgba(126, 231, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(126, 231, 255, 0.03) 1px, transparent 1px);
+      background-size:36px 36px;
+      mask-image:radial-gradient(circle at center, black 38%, transparent 92%);
+      pointer-events:none;
+      z-index:0;
+    }
+
+    /* Three.js canvas */
+    body > canvas { position:fixed; inset:0; z-index:1; display:block; }
+
+    .chrome{
+      border:1px solid var(--chat-blue);
+      box-shadow:0 18px 44px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.03), 0 0 18px var(--edge-glow);
+      border-radius:var(--radius);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)),
+        var(--panel-bg);
+      backdrop-filter: blur(14px) saturate(120%);
+    }
+    .panel-label{
+      position:absolute;
+      top:12px;
+      left:14px;
+      z-index:2;
+      font:600 11px/1.2 "IBM Plex Sans","Avenir Next","Segoe UI",sans-serif;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:var(--muted-text);
+      text-shadow:0 1px 3px rgba(0,0,0,.55)
+    }
+
+    #chat-container{
+      position:absolute;
+      left:var(--edge);
+      top:calc(var(--edge) + var(--youtube-h) + var(--gap));
+      bottom:var(--edge);
+      width:var(--left-w);
+      background:linear-gradient(180deg, rgba(13, 23, 37, .96), rgba(7, 12, 20, .92));
+      padding:1rem;
+      z-index:var(--z-chat);
+      display:flex;
+      flex-direction:column;
+      gap:.75rem
+    }
+    #chat-log{
+      color:var(--panel-text);
+      font-size:1rem;
+      line-height:1.42rem;
+      white-space:pre-wrap;
+      overflow-y:auto;
+      flex:1 1 auto;
+      min-height:0;
+      margin:0;
+      padding-top:22px
+    }
+    #chat-input{
+      width:100%;
+      padding:.8rem .95rem;
+      font-size:.98rem;
+      border-radius:14px;
+      border:1px solid rgba(116, 198, 255, 0.12);
+      outline:none;
+      background:rgba(4, 10, 16, 0.88);
+      color:var(--panel-text);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    #chat-input::placeholder{color:#6f8ba4}
+
+    #workspace-frame{
+      position:absolute;
+      top:var(--edge);
+      right:var(--edge);
+      width:var(--work-w);
+      height:var(--work-h);
+      z-index:var(--z-site)
+    }
+    #workspace-frame.chrome{background:var(--panel-bg-strong)}
+    #log-console{
+      position:absolute;
+      right:var(--edge);
+      bottom:var(--edge);
+      width:var(--side-w);
+      height:var(--console-h);
+      color:var(--accent);
+      font-size:.76rem;
+      line-height:1.45;
+      padding:32px 12px 12px;
+      overflow-y:auto;
+      z-index:var(--z-log);
+      background:rgba(5,10,18,.72)
+    }
+    #log-console.chrome{background:rgba(5,10,18,.72)}
+
+    #token-panel{
+      position:absolute;
+      right:var(--edge);
+      bottom:calc(var(--edge) + var(--console-h) + var(--gap));
+      width:var(--side-w);
+      height:var(--token-h);
+      z-index:var(--z-log);
+      padding:28px 10px 10px
+    }
+    #token-panel canvas{width:100%;height:100%;display:block}
+
+    #vision-preview{
+      position:absolute;
+      left:50%;
+      transform:translateX(-50%);
+      top:var(--edge);
+      width:min(420px, 28vw);
+      height:var(--vision-h);
+      z-index:var(--z-site);
+      overflow:hidden;
+      background:rgba(5,10,18,.74)
+    }
+    #vision-preview-title{
+      position:absolute;
+      top:12px;
+      left:14px;
+      z-index:2;
+      font:600 11px/1.2 "IBM Plex Sans","Avenir Next","Segoe UI",sans-serif;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:var(--muted-text);
+      text-shadow:0 1px 3px rgba(0,0,0,.7)
+    }
+    #vision-preview-img{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      opacity:.94
+    }
+
+    #music-panel{
+      position:absolute;
+      top:var(--edge);
+      left:var(--edge);
+      width:var(--youtube-w);
+      height:var(--youtube-h);
+      z-index:var(--z-site);
+      overflow:hidden;
+      background:rgba(5,10,18,.72);
+      padding-top:40px;
+    }
+    #music-title{
+      position:absolute;
+      top:12px;
+      left:14px;
+      right:14px;
+      z-index:2;
+      font:600 11px/1.2 "IBM Plex Sans","Avenir Next","Segoe UI",sans-serif;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:var(--muted-text);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #music-player{
+      width:100%;
+      height:100%;
+      border:0;
+    }
+
+    @media (max-width: 1280px){
+      :root{
+        --left-w: clamp(420px, 39vw, 640px);
+        --right-w: clamp(360px, 33vw, 520px);
+        --youtube-h: clamp(280px, 31vh, 380px);
+        --work-h: calc(100vh - (var(--edge) * 2) - var(--console-h) - var(--token-h) - (var(--gap) * 2));
+        --vision-w: clamp(240px, 17vw, 300px);
+      }
+    }
+
+    @media (max-width: 980px){
+      :root{
+        --left-w: calc(100vw - (var(--edge) * 2));
+        --right-w: calc(100vw - (var(--edge) * 2));
+        --youtube-w: calc(100vw - (var(--edge) * 2));
+        --youtube-h: clamp(220px, 28vh, 300px);
+        --work-w: calc(100vw - (var(--edge) * 2));
+        --work-h: clamp(220px, 30vh, 320px);
+        --side-w: calc(100vw - (var(--edge) * 2));
+        --token-h: 120px;
+        --console-h: 180px;
+        --vision-w: calc(100vw - (var(--edge) * 2));
+        --vision-h: 150px;
+      }
+      #workspace-frame{
+        top:calc(var(--edge) + var(--youtube-h) + var(--gap));
+        right:var(--edge);
+      }
+      #workspace-fallback{
+        top:calc(var(--edge) + var(--youtube-h) + var(--gap) + var(--work-h) + 8px) !important;
+        right:var(--edge) !important;
+        width:var(--right-w) !important;
+      }
+      #token-panel{
+        bottom:calc(var(--edge) + var(--console-h) + var(--gap));
+        height:var(--token-h)
+      }
+      #log-console{height:var(--console-h)}
+      #vision-preview{
+        width:var(--vision-w);
+        left:var(--edge);
+        transform:none;
+        height:var(--vision-h);
+        top:calc(var(--edge) + var(--youtube-h) + var(--gap) + var(--work-h) + var(--gap));
+        bottom:auto;
+      }
+      #music-panel{
+        width:var(--youtube-w);
+        height:var(--youtube-h);
+      }
+      #chat-container{
+        width:var(--left-w);
+        top:auto;
+        bottom:var(--edge);
+        height:220px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container" class="chrome">
+    <div class="panel-label">Conversation</div>
+    <div id="chat-log"></div>
+    <div style="display:flex;gap:.5rem">
+      <button id="upload-btn" title="Upload file" style="background:none;border:none;color:inherit;font-size:2rem;cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center">+</button>
+      <button id="mic-btn" title="Push-to-talk (browser mic)" style="background:none;border:none;color:#7fd3ff;font-size:1.35rem;cursor:pointer;padding:0 4px;line-height:1;display:flex;align-items:center;justify-content:center">🎙</button>
+      <button id="mic-always-btn" title="Toggle always-on browser mic" style="background:none;border:1px solid #2a3a4a;color:#8aa0b8;font-size:.8rem;cursor:pointer;padding:2px 7px;line-height:1;border-radius:12px;display:flex;align-items:center;justify-content:center">Always: Off</button>
+      <button id="cam-btn" title="Toggle browser camera for vision" style="background:none;border:1px solid #2a3a4a;color:#8aa0b8;font-size:.8rem;cursor:pointer;padding:2px 7px;line-height:1;border-radius:12px;display:flex;align-items:center;justify-content:center">Cam: Off</button>
+      <span id="mic-status" style="align-self:center;color:#8aa0b8;font:600 11px ui-sans-serif,system-ui;min-width:70px">Mic idle</span>
+      <input type="file" id="file-upload" style="display:none" accept=".jpg,.jpeg,.png,.pdf,.html,.txt">
+      <input id="chat-input" type="text" placeholder="Say something to Echo..." style="flex:1">
+    </div>
+  </div>
+
+  <iframe id="workspace-frame" class="chrome" src="https://andymitchell.online" frameborder="0"></iframe>
+  <div id="workspace-fallback" style="position:absolute;top:calc(var(--edge) + var(--work-h) + 8px);right:var(--edge);width:var(--work-w);z-index:var(--z-site);display:none;">
+    <div class="chrome" style="padding:8px 10px;font:600 12px ui-sans-serif,system-ui; color:#a0b4c8;">
+      <span id="workspace-msg">This site refused to be embedded.</span>
+      <button id="workspace-open" style="float:right;background:#0b5; color:#000; border:none; border-radius:8px; padding:4px 8px; cursor:pointer; font-weight:700">Open</button>
+    </div>
+  </div>
+  <div id="token-panel" class="chrome">
+    <div class="panel-label">Token Drift</div>
+    <canvas id="token-drift-canvas"></canvas>
+  </div>
+  <div id="vision-preview" class="chrome">
+    <div id="vision-preview-title">Echo Vision</div>
+    <img id="vision-preview-img" alt="Echo vision preview">
+  </div>
+  <div id="music-panel" class="chrome">
+    <div id="music-title">YouTube viewer idle</div>
+    <div id="music-player"></div>
+  </div>
+  <div id="log-console" class="chrome">
+    <div class="panel-label">System Log</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="/OBJLoader.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <script>
+    /* ===== Chat plumbing (guarded) ===== */
+    (function(){
+      var chatLog=document.getElementById('chat-log');
+      var chatInput=document.getElementById('chat-input');
+      var MAX_LINES=10;
+
+      function appendMessage(sender,message){
+        if(!chatLog) return;
+        var entry=document.createElement('div');
+        entry.textContent=(sender?sender:'')+': '+(message||'');
+        entry.style.color=(sender==='YOU')?'#aaa':'#0ff';
+        chatLog.appendChild(entry);
+        while(chatLog.children.length>MAX_LINES){ chatLog.removeChild(chatLog.firstChild); }
+        chatLog.scrollTop=chatLog.scrollHeight;
+      }
+      window.appendMessage=appendMessage; // reuse in uploader
+
+      function checkForMitchUpdates(){
+        fetch('/get_response').then(function(res){return res.json();})
+          .then(function(data){
+            if(data && data.text) appendMessage('Echo', data.text);
+            if(data && data.audio){ new Audio('/audio/'+data.audio).play(); }
+          }).catch(function(){});
+      }
+
+      function sendUserInput(text){
+        if(!text || !text.trim()) return;
+        appendMessage('YOU', text);
+        fetch('/listen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+      }
+
+      if(chatInput){
+        chatInput.addEventListener('keydown',function(e){
+          if(e.key==='Enter'){
+            var t=e.target.value; e.target.value='';
+            sendUserInput(t);
+          }
+        });
+      }
+
+      // ===== Browser mic (push-to-talk) =====
+      var micBtn = document.getElementById('mic-btn');
+      var micAlwaysBtn = document.getElementById('mic-always-btn');
+      var camBtn = document.getElementById('cam-btn');
+      var micStatus = document.getElementById('mic-status');
+      var visionPreviewImg = document.getElementById('vision-preview-img');
+      var musicTitleEl = document.getElementById('music-title');
+      var musicPlayerRoot = document.getElementById('music-player');
+      var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      var recognition = null;
+      var micActive = false;
+      var alwaysOnMic = false;
+      var micPausedByAssistant = false;
+      var micRestartTimer = null;
+      var micPermissionReady = false;
+      var blockWhileAssistantSpeaking = true;
+      var assistantSpeaking = false;
+      var nextMicStartAt = 0;
+      var AUTO_RESTART_BASE_MS = 350;
+      var POST_ASSISTANT_DELAY_MS = 1400;
+      var POST_RESULT_DELAY_MS = 900;
+      var cameraEnabled = false;
+      var cameraStream = null;
+      var cameraVideoEl = null;
+      var cameraCanvasEl = null;
+      var cameraFrameTimer = null;
+      var CAMERA_FRAME_INTERVAL_MS = 1500;
+      var ytPlayer = null;
+      var ytApiRequested = false;
+      var ytReadyCallbacks = [];
+      var musicQueue = [];
+
+      function setMicState(label, color){
+        if(!micStatus) return;
+        micStatus.textContent = label;
+        if(color) micStatus.style.color = color;
+      }
+
+      function refreshVisionPreview(){
+        if(!visionPreviewImg) return;
+        visionPreviewImg.src = '/latest.jpg?t=' + Date.now();
+      }
+
+      function setMusicTitle(text){
+        if(!musicTitleEl) return;
+        musicTitleEl.textContent = text || 'Music idle';
+      }
+
+      function ensureYouTubePlayer(callback){
+        function handleYouTubeError(){
+          setMusicTitle('Track unavailable, skipping...');
+          playNextFromQueue();
+        }
+
+        if(window.YT && window.YT.Player){
+          if(ytPlayer){
+            if(callback) callback();
+            return;
+          }
+          ytPlayer = new window.YT.Player('music-player', {
+            height: '100%',
+            width: '100%',
+            videoId: '',
+            playerVars: {
+              autoplay: 1,
+              controls: 1,
+              rel: 0,
+              modestbranding: 1
+            },
+            events: {
+              onStateChange: function(ev){
+                if(ev && ev.data === window.YT.PlayerState.ENDED){
+                  playNextFromQueue();
+                }
+              },
+              onError: handleYouTubeError
+            }
+          });
+          if(callback) callback();
+          return;
+        }
+
+        if(callback) ytReadyCallbacks.push(callback);
+        if(ytApiRequested) return;
+        ytApiRequested = true;
+
+        var prev = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = function(){
+          if(typeof prev === 'function'){
+            try { prev(); } catch(_) {}
+          }
+          ytPlayer = new window.YT.Player('music-player', {
+            height: '100%',
+            width: '100%',
+            videoId: '',
+            playerVars: {
+              autoplay: 1,
+              controls: 1,
+              rel: 0,
+              modestbranding: 1
+            },
+            events: {
+              onStateChange: function(ev){
+                if(ev && ev.data === window.YT.PlayerState.ENDED){
+                  playNextFromQueue();
+                }
+              },
+              onError: handleYouTubeError
+            }
+          });
+          var pending = ytReadyCallbacks.slice();
+          ytReadyCallbacks = [];
+          pending.forEach(function(fn){
+            try { fn(); } catch(_) {}
+          });
+        };
+
+        var script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+
+      function playVideoById(videoId){
+        if(!videoId) return;
+        ensureYouTubePlayer(function(){
+          if(!ytPlayer) return;
+          try {
+            ytPlayer.loadVideoById(videoId);
+          } catch(_){}
+        });
+      }
+
+      function playNextFromQueue(){
+        if(!musicQueue.length){
+          setMusicTitle('No queued track');
+          return;
+        }
+        var next = musicQueue.shift();
+        playVideoById(next.video_id || '');
+        setMusicTitle(next.title ? ('Playing: ' + next.title) : 'Playing queued track');
+      }
+
+      function bindMusicCommands(){
+        function attach(){
+          var sock = window.socket;
+          if(!sock || sock.__musicCommandsBound){ setTimeout(attach, 300); return; }
+          sock.__musicCommandsBound = true;
+
+          sock.on('music_command', function(payload){
+            var data = payload || {};
+            var action = String(data.action || '').toLowerCase();
+            if(!action) return;
+
+            if(action === 'play'){
+              var vid = String(data.video_id || '');
+              if(!vid) return;
+              var title = String(data.title || data.query || 'Requested track');
+              var incomingQueue = Array.isArray(data.queue) ? data.queue : [];
+              musicQueue = incomingQueue.map(function(it){
+                return {
+                  video_id: String((it && it.video_id) || ''),
+                  title: String((it && it.title) || '')
+                };
+              }).filter(function(it){ return !!it.video_id; });
+              setMusicTitle('Playing: ' + title);
+              playVideoById(vid);
+              return;
+            }
+
+            ensureYouTubePlayer(function(){
+              if(!ytPlayer) return;
+              if(action === 'pause'){
+                try { ytPlayer.pauseVideo(); } catch(_) {}
+                setMusicTitle('Music paused');
+                return;
+              }
+              if(action === 'resume'){
+                try { ytPlayer.playVideo(); } catch(_) {}
+                setMusicTitle('Music resumed');
+                return;
+              }
+              if(action === 'stop'){
+                try { ytPlayer.stopVideo(); } catch(_) {}
+                setMusicTitle('Music stopped');
+                return;
+              }
+              if(action === 'next'){
+                playNextFromQueue();
+                return;
+              }
+              if(action === 'volume'){
+                var v = Number(data.value);
+                if(!isNaN(v)){
+                  var clamped = Math.max(0, Math.min(100, Math.round(v)));
+                  try { ytPlayer.setVolume(clamped); } catch(_) {}
+                }
+              }
+            });
+          });
+        }
+        attach();
+      }
+      bindMusicCommands();
+
+      function isEchoSpeaking(){
+        return !!(assistantSpeaking || window.__mitchAssistantSpeaking || window.__mitchAudioSpeaking);
+      }
+
+      function setAlwaysButtonState(){
+        if(!micAlwaysBtn) return;
+        micAlwaysBtn.textContent = alwaysOnMic ? 'Always: On' : 'Always: Off';
+        micAlwaysBtn.style.color = alwaysOnMic ? '#7df2b1' : '#8aa0b8';
+        micAlwaysBtn.style.borderColor = alwaysOnMic ? '#3f7f5f' : '#2a3a4a';
+      }
+
+      function setCameraButtonState(label, color, border){
+        if(!camBtn) return;
+        if(label) camBtn.textContent = label;
+        camBtn.style.color = color || (cameraEnabled ? '#7df2b1' : '#8aa0b8');
+        camBtn.style.borderColor = border || (cameraEnabled ? '#3f7f5f' : '#2a3a4a');
+      }
+
+      function stopCameraFrameLoop(){
+        if(cameraFrameTimer){ clearInterval(cameraFrameTimer); cameraFrameTimer = null; }
+      }
+
+      function ensureCameraElements(){
+        if(!cameraVideoEl){
+          cameraVideoEl = document.createElement('video');
+          cameraVideoEl.autoplay = true;
+          cameraVideoEl.playsInline = true;
+          cameraVideoEl.muted = true;
+          cameraVideoEl.style.display = 'none';
+          document.body.appendChild(cameraVideoEl);
+        }
+        if(!cameraCanvasEl){
+          cameraCanvasEl = document.createElement('canvas');
+          cameraCanvasEl.style.display = 'none';
+          document.body.appendChild(cameraCanvasEl);
+        }
+      }
+
+      function uploadCameraFrame(){
+        if(!cameraEnabled || !cameraVideoEl || !cameraCanvasEl) return;
+        var vw = cameraVideoEl.videoWidth || 0;
+        var vh = cameraVideoEl.videoHeight || 0;
+        if(vw < 16 || vh < 16) return;
+
+        var maxW = 960;
+        var scale = vw > maxW ? (maxW / vw) : 1;
+        var w = Math.max(2, Math.round(vw * scale));
+        var h = Math.max(2, Math.round(vh * scale));
+        cameraCanvasEl.width = w;
+        cameraCanvasEl.height = h;
+
+        var ctx = cameraCanvasEl.getContext('2d');
+        if(!ctx) return;
+        ctx.drawImage(cameraVideoEl, 0, 0, w, h);
+
+        var dataUrl = '';
+        try { dataUrl = cameraCanvasEl.toDataURL('image/jpeg', 0.76); } catch(_){ return; }
+        if(!dataUrl) return;
+
+        fetch('/camera_frame', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ image: dataUrl })
+        }).catch(function(){});
+      }
+
+      function stopBrowserCamera(){
+        stopCameraFrameLoop();
+        if(cameraVideoEl){
+          try { cameraVideoEl.pause(); } catch(_) {}
+          try { cameraVideoEl.srcObject = null; } catch(_) {}
+        }
+        if(cameraStream){
+          try { cameraStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_) {}
+        }
+        cameraStream = null;
+        cameraEnabled = false;
+        setCameraButtonState('Cam: Off');
+      }
+
+      function buildCameraAttempts(){
+        var base = [
+          { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+          { video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+          { video: true, audio: false }
+        ];
+        if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices){
+          return Promise.resolve(base);
+        }
+        return navigator.mediaDevices.enumerateDevices()
+          .then(function(devs){
+            var cams = (devs || []).filter(function(d){ return d && d.kind === 'videoinput' && d.deviceId; });
+            var exact = cams.map(function(d){
+              return { video: { deviceId: { exact: d.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+            });
+            return exact.concat(base);
+          })
+          .catch(function(){
+            return base;
+          });
+      }
+
+      function startBrowserCamera(){
+        if(cameraEnabled) return;
+        if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+          setCameraButtonState('Cam: N/A', '#f39c9c', '#7f3f3f');
+          return;
+        }
+
+        ensureCameraElements();
+        stopBrowserCamera();
+        setCameraButtonState('Cam: ...', '#ffd98a', '#7f6a3f');
+        function tryAttempt(idx, attempts, lastErr){
+          if(idx >= attempts.length){
+            var why = (lastErr && (lastErr.name || lastErr.message)) ? String(lastErr.name || lastErr.message) : 'error';
+            cameraEnabled = false;
+            setCameraButtonState('Cam: Blocked', '#f39c9c', '#7f3f3f');
+            setMicState('Cam blocked (' + why + ')', '#f39c9c');
+            return;
+          }
+
+          navigator.mediaDevices.getUserMedia(attempts[idx])
+            .then(function(stream){
+              cameraStream = stream;
+              cameraEnabled = true;
+              if(cameraVideoEl){
+                cameraVideoEl.srcObject = stream;
+                cameraVideoEl.play().catch(function(){});
+              }
+              setCameraButtonState('Cam: On');
+              stopCameraFrameLoop();
+              uploadCameraFrame();
+              cameraFrameTimer = setInterval(uploadCameraFrame, CAMERA_FRAME_INTERVAL_MS);
+            })
+            .catch(function(err){
+              tryAttempt(idx + 1, attempts, err);
+            });
+        }
+
+        setTimeout(function(){
+          buildCameraAttempts().then(function(attempts){
+            tryAttempt(0, attempts || [], null);
+          });
+        }, 250);
+      }
+
+      function clearRestartTimer(){
+        if(micRestartTimer){ clearTimeout(micRestartTimer); micRestartTimer = null; }
+      }
+
+      function startMic(reason){
+        if(!recognition || micActive) return;
+        var now = Date.now();
+        if(now < nextMicStartAt){
+          clearRestartTimer();
+          micRestartTimer = setTimeout(function(){ startMic(reason); }, Math.max(60, nextMicStartAt - now));
+          return;
+        }
+        if(blockWhileAssistantSpeaking && isEchoSpeaking()){
+          if(reason === 'always'){
+            setMicState('Waiting for Echo', '#ffd98a');
+            clearRestartTimer();
+            micRestartTimer = setTimeout(function(){ startMic('always'); }, AUTO_RESTART_BASE_MS);
+          }
+          return;
+        }
+        try { recognition.start(); }
+        catch(_){
+          setMicState('Mic unavailable', '#f39c9c');
+        }
+      }
+
+      function ensureMicPermissionAndStart(reason){
+        if(micPermissionReady){
+          startMic(reason);
+          return;
+        }
+        if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+          // Some browsers still allow SpeechRecognition without this API.
+          startMic(reason);
+          return;
+        }
+
+        setMicState('Requesting mic...', '#ffd98a');
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(function(stream){
+            micPermissionReady = true;
+            try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(_) {}
+            startMic(reason);
+          })
+          .catch(function(err){
+            var why = (err && (err.name || err.message)) ? String(err.name || err.message) : 'permission';
+            setMicState('Mic blocked (' + why + ')', '#f39c9c');
+            if(micBtn) micBtn.style.color = '#f39c9c';
+            alwaysOnMic = false;
+            setAlwaysButtonState();
+          });
+      }
+
+      function scheduleAlwaysRestart(){
+        if(!alwaysOnMic || micActive) return;
+        clearRestartTimer();
+        var now = Date.now();
+        var delay = Math.max(AUTO_RESTART_BASE_MS, nextMicStartAt - now);
+        micRestartTimer = setTimeout(function(){ startMic('always'); }, delay);
+      }
+
+      function bindSpeakingState(){
+        function attach(){
+          var sock = window.socket;
+          if(!sock || sock.__micSpeakingBound){ setTimeout(attach, 300); return; }
+          sock.__micSpeakingBound = true;
+          sock.on('speak_chunk', function(){
+            assistantSpeaking = true;
+            if(alwaysOnMic && micActive){
+              micPausedByAssistant = true;
+              stopMic();
+            }
+          });
+          sock.on('speak_end', function(){
+            assistantSpeaking = false;
+            nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_ASSISTANT_DELAY_MS);
+            if(alwaysOnMic && micPausedByAssistant){
+              micPausedByAssistant = false;
+              scheduleAlwaysRestart();
+            }
+          });
+        }
+        attach();
+      }
+      bindSpeakingState();
+
+      function stopMic(){
+        if(!recognition) return;
+        try { recognition.stop(); } catch(_) {}
+      }
+
+      if(!SpeechRec){
+        setMicState('No mic API', '#f39c9c');
+        if(micBtn){ micBtn.disabled = true; micBtn.style.opacity = '0.5'; }
+        if(micAlwaysBtn){ micAlwaysBtn.disabled = true; micAlwaysBtn.style.opacity = '0.5'; }
+      } else {
+        recognition = new SpeechRec();
+        recognition.lang = 'en-GB';
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = function(){
+          micActive = true;
+          clearRestartTimer();
+          setMicState('Listening...', '#7df2b1');
+          if(micBtn) micBtn.style.color = '#7df2b1';
+        };
+
+        recognition.onresult = function(ev){
+          try{
+            var txt = (((ev||{}).results||[])[0]||[])[0].transcript || '';
+            txt = String(txt || '').trim();
+            if(txt){
+              if(isEchoSpeaking()){
+                setMicState('Ignored while Echo speaks', '#ffd98a');
+                nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_ASSISTANT_DELAY_MS);
+                return;
+              }
+              sendUserInput(txt);
+              nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_RESULT_DELAY_MS);
+            }
+          } catch(_) {}
+        };
+
+        recognition.onerror = function(ev){
+          var err = ev && ev.error ? String(ev.error) : 'error';
+          setMicState('Mic error (' + err + ')', '#f39c9c');
+          if(micBtn) micBtn.style.color = '#f39c9c';
+          if(err === 'not-allowed' || err === 'service-not-allowed'){
+            alwaysOnMic = false;
+            setAlwaysButtonState();
+          }
+        };
+
+        recognition.onend = function(){
+          micActive = false;
+          if(alwaysOnMic){
+            setMicState('Always on (standby)', '#7df2b1');
+            scheduleAlwaysRestart();
+          } else {
+            setMicState('Mic idle', '#8aa0b8');
+          }
+          if(micBtn) micBtn.style.color = '#7fd3ff';
+        };
+
+        if(micBtn && !micBtn.dataset.bound){
+          micBtn.addEventListener('click', function(){
+            if(micActive){ stopMic(); return; }
+            if(blockWhileAssistantSpeaking && isEchoSpeaking()){
+              setMicState('Wait (Echo speaking)', '#ffd98a');
+              return;
+            }
+            ensureMicPermissionAndStart('manual');
+          });
+          micBtn.dataset.bound = '1';
+        }
+
+        if(micAlwaysBtn && !micAlwaysBtn.dataset.bound){
+          micAlwaysBtn.addEventListener('click', function(){
+            alwaysOnMic = !alwaysOnMic;
+            setAlwaysButtonState();
+            clearRestartTimer();
+            if(alwaysOnMic){
+              setMicState('Always on (standby)', '#7df2b1');
+              if(!micActive) ensureMicPermissionAndStart('always');
+            } else {
+              setMicState(micActive ? 'Listening...' : 'Mic idle', micActive ? '#7df2b1' : '#8aa0b8');
+            }
+          });
+          micAlwaysBtn.dataset.bound = '1';
+        }
+        setAlwaysButtonState();
+        setCameraButtonState('Cam: Off');
+      }
+
+      if(camBtn && !camBtn.dataset.bound){
+        camBtn.addEventListener('click', function(){
+          if(cameraEnabled){ stopBrowserCamera(); return; }
+          startBrowserCamera();
+        });
+        camBtn.dataset.bound = '1';
+      }
+      setCameraButtonState(cameraEnabled ? 'Cam: On' : 'Cam: Off');
+
+      window.addEventListener('beforeunload', function(){
+        stopBrowserCamera();
+      });
+
+      setInterval(refreshVisionPreview, 1200);
+      refreshVisionPreview();
+      setInterval(checkForMitchUpdates,2000);
+    })();
+
+    /* ===== Upload button (no optional chaining) ===== */
+    window.addEventListener('DOMContentLoaded', function(){
+      var uploadBtn=document.getElementById('upload-btn');
+      var fileInput=document.getElementById('file-upload');
+      if(uploadBtn && !uploadBtn.dataset.bound){
+        uploadBtn.addEventListener('click', function(){ if(fileInput) fileInput.click(); });
+        uploadBtn.dataset.bound='1';
+      }
+      if(fileInput && !fileInput.dataset.bound){
+        fileInput.addEventListener('change', function(e){
+          var f=(e && e.target && e.target.files && e.target.files[0]) ? e.target.files[0] : null;
+          if(!f) return;
+          if(window.appendMessage) window.appendMessage('YOU','Uploading: '+f.name);
+          var form=new FormData(); form.append('file', f, f.name);
+          fetch('/upload',{method:'POST',body:form})
+            .then(function(res){return res.json();})
+            .then(function(data){
+              if(window.appendMessage) window.appendMessage('Echo',(data && data.message)?data.message:('Received '+f.name));
+            }).catch(function(){
+              if(window.appendMessage) window.appendMessage('Echo','Upload failed.');
+            }).finally(function(){ fileInput.value=''; });
+        });
+        fileInput.dataset.bound='1';
+      }
+    });
+  </script>
+
+  <!-- your orb scene -->
+  <script src="/main.js"></script>
+</body>
+</html>

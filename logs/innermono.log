@@ -1,0 +1,2 @@
+2026-05-15T21:47:33.386980 [EVENT: SYSTEM_LOG] {"level":"INFO","component":"memory","message":"No memory log found."}
+2026-05-15T21:47:33.402889 [EVENT: SYSTEM_LOG] {"level":"INFO","component":"memory","message":"Memory online and listening for conversation events."}

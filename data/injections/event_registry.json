@@ -1,0 +1,20 @@
+{
+  "SYSTEM_LOG": {
+    "emitters": [
+      "core.system_log"
+    ],
+    "subscribers": []
+  },
+  "USER_TURN_ACCEPTED": {
+    "emitters": [],
+    "subscribers": [
+      "core.memory"
+    ]
+  },
+  "EMIT_ASSISTANT_RESPONSE": {
+    "emitters": [],
+    "subscribers": [
+      "core.memory"
+    ]
+  }
+}

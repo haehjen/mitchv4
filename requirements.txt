@@ -1,0 +1,12 @@
+openai
+flask
+flask-socketio
+psutil
+requests
+numpy
+soundfile
+pyaudio
+piper-tts
+beautifulsoup4
+pdfminer.six
+Pillow
