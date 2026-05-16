@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 from pathlib import Path
@@ -7,8 +8,6 @@ from core.system_log import get_logger
 
 logger = get_logger("vision_ai")
 
-# Public image URL served by Flask + NGINX
-CAMERA_URL = "https://mitch.andymitchell.online/latest.jpg"
 BROWSER_CAMERA_PATH = Path(MITCH_ROOT) / "uploads" / "browser_camera_latest.jpg"
 BROWSER_CAMERA_MAX_AGE_SECONDS = int(os.getenv("MITCH_BROWSER_CAMERA_MAX_AGE", "180"))
 
@@ -28,21 +27,25 @@ class VisionAI:
         except Exception:
             return False
 
-    def _prepare_frame_for_analysis(self):
+    def _frame_data_url(self):
         """
         Browser camera is the only supported live vision source in v4.
         """
         if self._has_fresh_browser_camera():
             logger.info("[VisionAI] Using fresh browser camera frame for analysis.")
-            return
+            image_b64 = base64.b64encode(BROWSER_CAMERA_PATH.read_bytes()).decode("ascii")
+            return f"data:image/jpeg;base64,{image_b64}"
         logger.info("[VisionAI] No fresh browser camera frame is available.")
+        return None
 
     async def capture_and_describe(self):
         try:
-            self._prepare_frame_for_analysis()
+            image_url = self._frame_data_url()
         except Exception as e:
             logger.error(f"Failed to capture image: {e}")
             return f"[VisionAI] Failed to capture image: {e}"
+        if not image_url:
+            return "I do not have a fresh browser camera frame yet."
 
         response = self.client.chat.completions.create(
             model="gpt-4o",
@@ -51,7 +54,7 @@ class VisionAI:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Please describe this image."},
-                        {"type": "image_url", "image_url": {"url": CAMERA_URL}}
+                        {"type": "image_url", "image_url": {"url": image_url}}
                     ]
                 }
             ],
@@ -63,10 +66,12 @@ class VisionAI:
 
     async def detect_objects(self):
         try:
-            self._prepare_frame_for_analysis()
+            image_url = self._frame_data_url()
         except Exception as e:
             logger.error(f"Failed to capture image: {e}")
             return f"[VisionAI] Failed to capture image: {e}"
+        if not image_url:
+            return "I do not have a fresh browser camera frame yet."
 
         response = self.client.chat.completions.create(
             model="gpt-4o",
@@ -75,7 +80,7 @@ class VisionAI:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "List all objects you can identify in this image."},
-                        {"type": "image_url", "image_url": {"url": CAMERA_URL}}
+                        {"type": "image_url", "image_url": {"url": image_url}}
                     ]
                 }
             ],

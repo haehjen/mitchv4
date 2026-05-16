@@ -69,14 +69,12 @@ class StreamMouth:
             try:
                 with self.audio_lock:
                     self.is_playing.set()
-                    EventBus.get_instance().emit("MUTE_EARS", {})
                     self._play_with_pyaudio(wav_path)
             except Exception as e:
                 if DEBUG_SPEAKER:
                     logger.debug(f"Playback error: {e}")
             finally:
                 self.is_playing.clear()
-                EventBus.get_instance().emit("UNMUTE_EARS", {})
                 try:
                     os.unlink(wav_path)
                 except Exception as cleanup_error:
@@ -125,10 +123,7 @@ class StreamMouth:
                 wav_path = temp_wav.name
 
             with wave.open(wav_path, "wb") as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(22050)
-                self.voice.synthesize(speakable, wav_file)
+                self.voice.synthesize_wav(speakable, wav_file)
 
             if BROWSER_AUDIO_STREAM:
                 try:

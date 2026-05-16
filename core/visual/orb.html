@@ -342,17 +342,17 @@
           }).catch(function(){});
       }
 
-      function sendUserInput(text){
+      function sendUserInput(text, source){
         if(!text || !text.trim()) return;
         appendMessage('YOU', text);
-        fetch('/listen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+        fetch('/listen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text, source:source || 'browser_text'})});
       }
 
       if(chatInput){
         chatInput.addEventListener('keydown',function(e){
           if(e.key==='Enter'){
             var t=e.target.value; e.target.value='';
-            sendUserInput(t);
+            sendUserInput(t, 'browser_text');
           }
         });
       }
@@ -819,7 +819,9 @@
 
         recognition.onresult = function(ev){
           try{
-            var txt = (((ev||{}).results||[])[0]||[])[0].transcript || '';
+            var results = (ev && ev.results) ? ev.results : [];
+            var idx = (typeof ev.resultIndex === 'number') ? ev.resultIndex : Math.max(0, results.length - 1);
+            var txt = ((results[idx] || [])[0] || {}).transcript || '';
             txt = String(txt || '').trim();
             if(txt){
               if(isEchoSpeaking()){
@@ -827,10 +829,15 @@
                 nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_ASSISTANT_DELAY_MS);
                 return;
               }
-              sendUserInput(txt);
+              setMicState('Heard: ' + txt, '#7df2b1');
+              sendUserInput(txt, 'browser_mic');
               nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_RESULT_DELAY_MS);
             }
           } catch(_) {}
+        };
+
+        recognition.onnomatch = function(){
+          setMicState('No speech matched', '#ffd98a');
         };
 
         recognition.onerror = function(ev){

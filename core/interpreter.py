@@ -93,7 +93,13 @@ def handle_input(data):
 
     if "?" in text or len(text.split()) < 4:
         logger.debug(f"Escalating to GPT for ambiguous input: '{text}'")
-    event_bus.emit("EMIT_CHAT_REQUEST", {"prompt": text})
+    event_bus.emit(
+        "EMIT_CHAT_REQUEST",
+        {
+            "prompt": text,
+            "source": data.get("source", "user"),
+        },
+    )
 
 
 def handle_assistant_response(data):

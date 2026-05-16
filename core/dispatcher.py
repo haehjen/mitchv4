@@ -20,6 +20,7 @@ def get_vision_ai():
 
 _dispatcher_started = False
 _USER_FEEDBACK_EVENTS = (
+    "EMIT_ASSISTANT_RESPONSE",
     "EMIT_CHAT_REQUEST",
     "EMIT_SPEAK",
     "EMIT_TOOL_RESULT",
@@ -36,15 +37,15 @@ def _intent_human_name(intent_name: str) -> str:
 
 
 def _emit_action_confirmation(intent_name: str):
-    token = _new_token()
     spoken = f"Done. I handled {_intent_human_name(intent_name)}."
-    event_bus.emit("EMIT_TOKEN_REGISTERED", {"token": token})
-    event_bus.emit("EMIT_VISUAL_TOKEN", {"token": token})
     event_bus.emit(
-        "EMIT_SPEAK",
-        {"text": spoken, "token": token, "source": "intent_confirmation"},
+        "EMIT_TOOL_RESULT",
+        {
+            "tool_call_id": None,
+            "function_name": intent_name,
+            "output": spoken,
+        },
     )
-    event_bus.emit("EMIT_SPEAK_END", {"token": token, "full_text": spoken})
 
 
 def _run_registry_intent_with_feedback(intent, text: str):
@@ -77,15 +78,11 @@ def emit_intent_response(intent, tool_call_id, output, status="success", token=N
         token = str(time.time())
 
     payloads = [
-        ("EMIT_SPEAK", {
-            "text": output,
-            "source": "intent",
-            "token": token
-        }),
         ("EMIT_TOOL_RESULT", {
             "tool_call_id": tool_call_id,
             "function_name": intent,
-            "output": output
+            "output": output,
+            "source_token": token,
         }),
         ("EMIT_ACK", {
             "status": status,
@@ -96,6 +93,44 @@ def emit_intent_response(intent, tool_call_id, output, status="success", token=N
 
     for event, payload in payloads:
         event_bus.emit(event, payload)
+
+def _describe_scene_intent(_text: str):
+    description = asyncio.run(get_vision_ai().capture_and_describe())
+    emit_intent_response("describe_scene", None, description, token=_new_token())
+
+
+def _detect_objects_intent(_text: str):
+    objects = asyncio.run(get_vision_ai().detect_objects())
+    emit_intent_response("detect_objects", None, objects, token=_new_token())
+
+
+IntentRegistry.register_intent(
+    "describe_scene",
+    _describe_scene_intent,
+    keywords=[
+        "what can you see",
+        "what do you see",
+        "can you see me",
+        "look through the camera",
+        "describe the scene",
+        "describe what you see",
+        "see me through the camera",
+    ],
+    priority=20,
+)
+
+IntentRegistry.register_intent(
+    "detect_objects",
+    _detect_objects_intent,
+    keywords=[
+        "detect objects",
+        "what objects can you see",
+        "what objects do you see",
+        "list visible objects",
+        "what is in front of you",
+    ],
+    priority=20,
+)
 
 def handle_user_intent(data):
     if DEBUG:

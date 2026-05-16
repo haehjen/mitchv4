@@ -384,6 +384,7 @@ def handle_listen():
     """
     data = request.get_json(silent=True) or {}
     text = data.get("text") if isinstance(data, dict) else None
+    source = data.get("source") if isinstance(data, dict) else None
     if not text:
         # Fallbacks
         text = request.form.get("text") or request.args.get("text")
@@ -421,7 +422,7 @@ def handle_listen():
                 logger.debug(f"OPEN_URL (from input): {url}")
     except Exception:
         pass
-    event_bus.emit("EMIT_INPUT_RECEIVED", {"text": text, "source": "user"})
+    event_bus.emit("EMIT_INPUT_RECEIVED", {"text": text, "source": source or "browser_text"})
     return jsonify({"status": "ok"})
 
 # === File Upload handling ===

@@ -13,7 +13,7 @@ LOG_DIR = Path(MITCH_ROOT) / "logs"
 DATA_DIR = Path(MITCH_ROOT) / "data"
 
 # === Bedrock Hash (LOCKED) ===
-BEDROCK_HASH = "9744e1c7add3a63e7b95391ca00914b645e81314bd3b59f0ea970f2a7a10d0d0"
+BEDROCK_HASH = "58c7d17937977d55f39c747cec45e5336c7c73e58008341ff9e8115e125a1146"
 
 def hash_persona():
     with open(PERSONA_FILE, "r", encoding="utf-8") as f:
@@ -55,8 +55,16 @@ def load_event_summaries():
     if not innermono.exists():
         return ""
     try:
-        lines = innermono.read_text(encoding="utf-8").splitlines()[-8:]
-        return "\n".join(lines)
+        summaries = []
+        for line in reversed(innermono.read_text(encoding="utf-8").splitlines()):
+            if "BROWSER_AUDIO_CHUNK" in line:
+                continue
+            if len(line) > 500:
+                line = line[:497] + "..."
+            summaries.append(line)
+            if len(summaries) == 8:
+                break
+        return "\n".join(reversed(summaries))
     except Exception as e:
         logger.warning(f"Failed to read innermono.log: {e}")
         return ""

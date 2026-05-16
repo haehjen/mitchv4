@@ -192,20 +192,6 @@ def generate_token():
     return str(time.time()).replace(".", "")
 
 
-def emit_chunk(chunk, token):
-    # Avoid sending fenced code ticks as individual chunks (can break some UIs)
-    if chunk.strip().startswith("```"):
-        return
-    event_bus.emit("EMIT_SPEAK_CHUNK", {"chunk": chunk, "token": token})
-
-
-def emit_end(token, full_text=None):
-    payload = {"token": token}
-    if full_text is not None:
-        payload["full_text"] = full_text
-    event_bus.emit("EMIT_SPEAK_END", payload)
-
-
 def emit_assistant_response(response_type: str, token: str, **payload):
     event_bus.emit(
         "EMIT_ASSISTANT_RESPONSE",
@@ -248,6 +234,7 @@ def handle_chat_request(data):
     if not isinstance(data, dict):
         data = {"prompt": str(data or "")}
     prompt = data.get("prompt", "")
+    input_source = data.get("source", "user")
     retrieved_context = data.get("retrieved_context", "")
     force_openai_minimal = bool(data.get("force_openai_minimal"))
     request_type = data.get("request_type")
@@ -263,6 +250,7 @@ def handle_chat_request(data):
         {
             "request_type": request_type,
             "force_openai_minimal": force_openai_minimal,
+            "input_source": input_source,
         },
     )
 
@@ -270,12 +258,12 @@ def handle_chat_request(data):
         if force_openai_minimal:
             thread = threading.Thread(
                 target=stream_from_openai_minimal_rag,
-                args=(prompt, token, retrieved_context, request_type),
+                args=(prompt, token, retrieved_context, request_type, input_source),
             )
         else:
             thread = threading.Thread(
                 target=stream_from_openai,
-                args=(prompt, token, retrieved_context),
+                args=(prompt, token, retrieved_context, input_source),
             )
         thread.start()
     except Exception as e:
@@ -325,7 +313,16 @@ def _build_context_blocks(prompt: str, retrieved_context: str = ""):
         )
     return system_prompt, recent, knowledge_context, retrieved_context_block
 
-def stream_from_openai(prompt, token, retrieved_context=""):
+def _input_source_context(input_source: str) -> str:
+    source_labels = {
+        "browser_mic": "Current input channel: browser microphone transcript.",
+        "browser_text": "Current input channel: typed browser text.",
+        "HouseCore": "Current input channel: HouseCore.",
+    }
+    return source_labels.get(input_source, "")
+
+
+def stream_from_openai(prompt, token, retrieved_context="", input_source="user"):
     try:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY is not set.")
@@ -333,12 +330,15 @@ def stream_from_openai(prompt, token, retrieved_context=""):
             prompt, retrieved_context=retrieved_context
         )
         user_content = prompt
+        input_source_context = _input_source_context(input_source)
         if retrieved_context_block:
             user_content = (
                 f"{prompt}\n\n"
                 f"{retrieved_context_block}\n\n"
                 "Use this context only if relevant and accurate."
             )
+        if input_source_context:
+            user_content = f"{input_source_context}\n\n{user_content}"
         history_chars = sum(len(str(entry.get("content", ""))) for entry in recent)
         system_base_chars, injection_chars = _compute_system_prompt_parts(system_prompt)
         prompt_total_chars = (
@@ -396,7 +396,7 @@ def stream_from_openai(prompt, token, retrieved_context=""):
         emit_assistant_response("message", token, text="Something went wrong.", source="openai")
 
 
-def stream_from_openai_minimal_rag(prompt, token, retrieved_context="", request_type=None):
+def stream_from_openai_minimal_rag(prompt, token, retrieved_context="", request_type=None, input_source="user"):
     topic_label = (
         "Tarkov" if request_type == "tarkov_rag"
         else "Pokemon" if request_type == "pokemon_rag"
@@ -427,6 +427,7 @@ def stream_from_openai_minimal_rag(prompt, token, retrieved_context="", request_
             {
                 "role": "user",
                 "content": (
+                    f"{_input_source_context(input_source)}\n\n"
                     f"Question:\n{prompt}\n\n"
                     f"Source text:\n{source_block or '(no source text provided)'}"
                 ),
@@ -508,13 +509,11 @@ def handle_module_request(data):
 
         full_response = response.choices[0].message.content
         maybe_emit_module_create(full_response)
-        emit_chunk(full_response, token)
-        emit_end(token, full_response)
+        emit_assistant_response("message", token, text=full_response, source="module_request")
 
     except Exception as e:
         logger.error(f"Module generation failed: {e}")
-        emit_chunk("Module generation failed.", token)
-        emit_end(token)
+        emit_assistant_response("message", token, text="Module generation failed.", source="module_request")
 
 
 def on_chat_request(data):
@@ -577,8 +576,12 @@ def handle_tool_result(data):
         thread.start()
     except Exception as e:
         logger.error(f"Tool narration thread failed: {e}")
-        emit_chunk(f"{tool_name}: {output}", token)
-        emit_end(token)
+        emit_assistant_response(
+            "message",
+            token,
+            text=f"{tool_name}: {output}",
+            source="tool_result_fallback",
+        )
 
 
 def handle_chat_response(data):
