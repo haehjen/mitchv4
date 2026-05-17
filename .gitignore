@@ -7,3 +7,7 @@ mitchskeys
 .env
 
 data/memory.jsonl
+
+data/injections/web_summary.md
+data/news_digest.json
+data/pending_updates.json

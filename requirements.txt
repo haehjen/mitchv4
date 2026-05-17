@@ -10,3 +10,5 @@ piper-tts
 beautifulsoup4
 pdfminer.six
 Pillow
+
+ddgs

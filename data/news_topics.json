@@ -1,0 +1,35 @@
+{
+  "active": [
+    {
+      "term": "world news",
+      "mentions": 0,
+      "source": "baseline"
+    },
+    {
+      "term": "uk politics",
+      "mentions": 0,
+      "source": "baseline"
+    },
+    {
+      "term": "geopolitics",
+      "mentions": 0,
+      "source": "baseline"
+    },
+    {
+      "term": "defense",
+      "mentions": 0,
+      "source": "baseline"
+    },
+    {
+      "term": "technology",
+      "mentions": 0,
+      "source": "baseline"
+    },
+    {
+      "term": "artificial intelligence",
+      "mentions": 0,
+      "source": "baseline"
+    }
+  ],
+  "candidates": []
+}

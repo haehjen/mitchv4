@@ -10,6 +10,8 @@ from core.event_bus import event_bus, INNERMONO_PATH
 from core import (
     interpreter,
     memory,
+    pending_updates,
+    presence,
     stream_mouth,
     chat_handler,
 )
@@ -90,6 +92,8 @@ def main():
     # Core subsystems
     stream_mouth.start_stream_mouth()
     memory.start_memory()
+    pending_updates.start_pending_updates()
+    presence.start_presence()
     _start_thread(dispatcher.start_dispatcher, "dispatcher")
     _start_thread(interpreter.start_interpreter, "interpreter")
     _start_thread(visual_web.start_visual, "visual_web")

@@ -32,6 +32,48 @@ BROWSER_CAMERA_DIR = Path(MITCH_ROOT) / "uploads"
 BROWSER_CAMERA_PATH = BROWSER_CAMERA_DIR / "browser_camera_latest.jpg"
 BROWSER_CAMERA_MAX_AGE_SECONDS = int(os.getenv("MITCH_BROWSER_CAMERA_MAX_AGE", "180"))
 
+
+def _embedding_block_reason(url: str) -> str | None:
+    try:
+        response = requests.get(url, timeout=6, allow_redirects=True, stream=True)
+        headers = {k.lower(): str(v).lower() for k, v in response.headers.items()}
+        response.close()
+    except Exception:
+        # If we cannot inspect it reliably, let the browser attempt it.
+        return None
+
+    xfo = headers.get("x-frame-options", "")
+    if "deny" in xfo or "sameorigin" in xfo:
+        return f"x-frame-options={xfo}"
+
+    csp = headers.get("content-security-policy", "")
+    if "frame-ancestors" in csp:
+        # This is conservative, but useful: frame-ancestors generally means the
+        # publisher is expressing an embed policy, and our origin is rarely in it.
+        return "content-security-policy frame-ancestors"
+    return None
+
+
+@socketio.on("workspace_embed_failed")
+def handle_workspace_embed_failed(data):
+    if not isinstance(data, dict):
+        return
+    url = str(data.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return
+    event_bus.emit(
+        "EMIT_TOOL_RESULT",
+        {
+            "tool_call_id": None,
+            "function_name": "workspace_open_url",
+            "output": {
+                "status": "embed_blocked",
+                "url": url,
+                "message": "That page does not allow embedded display, so I kept the current workspace page open.",
+            },
+        },
+    )
+
 class VisualOrb:
     def __init__(self):
         self.active_token = None
@@ -227,6 +269,22 @@ class VisualOrb:
         url = url.strip()
         if not url.startswith(("http://", "https://")):
             return
+        block_reason = _embedding_block_reason(url)
+        if block_reason:
+            event_bus.emit(
+                "EMIT_TOOL_RESULT",
+                {
+                    "tool_call_id": None,
+                    "function_name": "workspace_open_url",
+                    "output": {
+                        "status": "embed_blocked",
+                        "url": url,
+                        "reason": block_reason,
+                        "message": "That page does not allow embedded display, so I kept the current workspace page open.",
+                    },
+                },
+            )
+            return
         socketio.emit("OPEN_URL", {"url": url, "token": data.get("token")})
 
     def on_music_command(self, data):
@@ -368,6 +426,25 @@ def receive_camera_frame():
         return jsonify({"error": f"write_failed: {e}"}), 500
 
     return jsonify({"status": "ok", "path": f"/uploads/{BROWSER_CAMERA_PATH.name}"})
+
+
+@app.route("/presence_activity", methods=["POST"])
+def receive_presence_activity():
+    payload = request.get_json(silent=True) or {}
+    source = str(payload.get("source") or "browser_motion")
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except Exception:
+        confidence = 0.0
+    event_bus.emit(
+        "PRESENCE_ACTIVITY",
+        {
+            "source": source,
+            "confidence": max(0.0, min(1.0, confidence)),
+            "motion_score": payload.get("motion_score"),
+        },
+    )
+    return jsonify({"status": "ok"})
 
 @app.route("/get_response")
 def get_response():

@@ -18,7 +18,8 @@ STRICT_INTENT_MODULE_ALLOWLIST = {
         (
             "modules.weather_fetcher,modules.web_search,modules.proxmon,"
             "modules.news_digester,modules.task_automator,modules.goal_tracker,"
-            "modules.user_prompt_inbox,modules.tarkov_wiki_intent"
+            "modules.user_prompt_inbox,modules.tarkov_wiki_intent,"
+            "modules.youtube_music_skill"
         ),
     ).split(",")
     if part.strip()
@@ -52,12 +53,13 @@ def _keyword_is_too_generic(keyword: str) -> bool:
 
 
 class Intent:
-    def __init__(self, name, handler, keywords=None, objects=None, priority=0):
+    def __init__(self, name, handler, keywords=None, objects=None, priority=0, patterns=None):
         self.name = name
         self.handler = handler
         self.keywords = keywords or []
         self.objects = objects or []
         self.priority = int(priority or 0)
+        self.patterns = patterns or []
 
     def score(self, text):
         text = self._normalize_text(text)
@@ -67,6 +69,13 @@ class Intent:
         text_tokens = text.split()
         text_token_set = set(text_tokens)
         score = 0
+
+        for pattern in self.patterns:
+            try:
+                if re.search(pattern, text):
+                    score = max(score, 70)
+            except re.error:
+                logger.warning(f"Invalid intent pattern for '{self.name}': {pattern}")
 
         for kw in self.keywords:
             norm_kw = self._normalize_text(kw)
@@ -159,7 +168,7 @@ class IntentRegistry:
     intents = []
 
     @classmethod
-    def register_intent(cls, name, handler, keywords=None, objects=None, priority=0):
+    def register_intent(cls, name, handler, keywords=None, objects=None, priority=0, patterns=None):
         source_module = getattr(handler, "__module__", "unknown")
         keywords = keywords or []
 
@@ -197,7 +206,7 @@ class IntentRegistry:
             )
             return
 
-        cls.intents.append(Intent(name, handler, keywords, objects, priority=priority))
+        cls.intents.append(Intent(name, handler, keywords, objects, priority=priority, patterns=patterns))
 
     @classmethod
     def match_intent(cls, text):

@@ -382,7 +382,14 @@
       var cameraStream = null;
       var cameraVideoEl = null;
       var cameraCanvasEl = null;
+      var motionCanvasEl = null;
+      var lastMotionFrame = null;
+      var lastPresenceEmitAt = 0;
       var cameraFrameTimer = null;
+      var MOTION_SAMPLE_W = 96;
+      var MOTION_SAMPLE_H = 54;
+      var MOTION_THRESHOLD = 12;
+      var MOTION_EMIT_COOLDOWN_MS = 7000;
       var CAMERA_FRAME_INTERVAL_MS = 1500;
       var ytPlayer = null;
       var ytApiRequested = false;
@@ -598,6 +605,13 @@
           cameraCanvasEl.style.display = 'none';
           document.body.appendChild(cameraCanvasEl);
         }
+        if(!motionCanvasEl){
+          motionCanvasEl = document.createElement('canvas');
+          motionCanvasEl.width = MOTION_SAMPLE_W;
+          motionCanvasEl.height = MOTION_SAMPLE_H;
+          motionCanvasEl.style.display = 'none';
+          document.body.appendChild(motionCanvasEl);
+        }
       }
 
       function uploadCameraFrame(){
@@ -626,6 +640,45 @@
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ image: dataUrl })
         }).catch(function(){});
+
+        detectCameraMotion();
+      }
+
+      function detectCameraMotion(){
+        if(!cameraEnabled || !cameraVideoEl || !motionCanvasEl) return;
+        var ctx = motionCanvasEl.getContext('2d', { willReadFrequently: true });
+        if(!ctx) return;
+        ctx.drawImage(cameraVideoEl, 0, 0, MOTION_SAMPLE_W, MOTION_SAMPLE_H);
+        var pixels = null;
+        try { pixels = ctx.getImageData(0, 0, MOTION_SAMPLE_W, MOTION_SAMPLE_H).data; } catch(_) { return; }
+        if(!lastMotionFrame){
+          lastMotionFrame = new Uint8ClampedArray(pixels);
+          return;
+        }
+        var changed = 0;
+        var samples = 0;
+        for(var i=0; i<pixels.length; i+=16){
+          var diff = Math.abs(pixels[i] - lastMotionFrame[i])
+            + Math.abs(pixels[i+1] - lastMotionFrame[i+1])
+            + Math.abs(pixels[i+2] - lastMotionFrame[i+2]);
+          if(diff > 48) changed++;
+          samples++;
+        }
+        lastMotionFrame = new Uint8ClampedArray(pixels);
+        var motionScore = samples ? (changed / samples) : 0;
+        var now = Date.now();
+        if(motionScore >= 0.025 && now - lastPresenceEmitAt >= MOTION_EMIT_COOLDOWN_MS){
+          lastPresenceEmitAt = now;
+          fetch('/presence_activity', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+              source: 'browser_motion',
+              confidence: Math.min(0.95, 0.35 + motionScore),
+              motion_score: motionScore
+            })
+          }).catch(function(){});
+        }
       }
 
       function stopBrowserCamera(){
@@ -639,6 +692,7 @@
         }
         cameraStream = null;
         cameraEnabled = false;
+        lastMotionFrame = null;
         setCameraButtonState('Cam: Off');
       }
 
@@ -770,24 +824,37 @@
       }
 
       function bindSpeakingState(){
+        window.addEventListener('mitchAssistantSpeakingChanged', function(ev){
+          var detail = ev && ev.detail ? ev.detail : {};
+          assistantSpeaking = !!detail.speaking;
+          if(assistantSpeaking){
+            if(micActive){
+              micPausedByAssistant = true;
+              stopMic();
+            }
+            return;
+          }
+          nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_ASSISTANT_DELAY_MS);
+          if(alwaysOnMic && micPausedByAssistant){
+            micPausedByAssistant = false;
+            scheduleAlwaysRestart();
+          }
+        });
+
         function attach(){
           var sock = window.socket;
           if(!sock || sock.__micSpeakingBound){ setTimeout(attach, 300); return; }
           sock.__micSpeakingBound = true;
           sock.on('speak_chunk', function(){
             assistantSpeaking = true;
-            if(alwaysOnMic && micActive){
+            if(micActive){
               micPausedByAssistant = true;
               stopMic();
             }
           });
           sock.on('speak_end', function(){
-            assistantSpeaking = false;
-            nextMicStartAt = Math.max(nextMicStartAt, Date.now() + POST_ASSISTANT_DELAY_MS);
-            if(alwaysOnMic && micPausedByAssistant){
-              micPausedByAssistant = false;
-              scheduleAlwaysRestart();
-            }
+            // Actual resume is driven by audio playback completion from main.js.
+            // speak_end only means the text stream ended, not that the speaker is quiet.
           });
         }
         attach();

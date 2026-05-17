@@ -193,6 +193,14 @@ function updateAssistantSpeakingState() {
   const audioSpeaking = !!(serverAudioActive || browserTtsActive || browserQueueActive);
   window.__mitchAudioSpeaking = audioSpeaking;
   window.__mitchAssistantSpeaking = !!(speaking || audioSpeaking);
+  try {
+    window.dispatchEvent(new CustomEvent("mitchAssistantSpeakingChanged", {
+      detail: {
+        speaking: !!window.__mitchAssistantSpeaking,
+        audioSpeaking: audioSpeaking
+      }
+    }));
+  } catch (_) {}
 }
 
 function selectBrowserVoice() {
@@ -466,8 +474,15 @@ function openWorkspaceUrl(url) {
   const msg = document.getElementById("workspace-msg");
   if (!frame || !url || !/^https?:\/\//i.test(url)) return;
 
-  if (fb) fb.style.display = "none";
-  frame.src = url;
+  const probe = document.createElement("iframe");
+  probe.style.position = "absolute";
+  probe.style.width = "1px";
+  probe.style.height = "1px";
+  probe.style.opacity = "0";
+  probe.style.pointerEvents = "none";
+  probe.style.left = "-9999px";
+  probe.setAttribute("aria-hidden", "true");
+  document.body.appendChild(probe);
 
   // Keep an explicit external-open path available even if embedding fails.
   if (btn) {
@@ -475,25 +490,33 @@ function openWorkspaceUrl(url) {
   }
 
   let handled = false;
+  function cleanupProbe(){
+    try { probe.remove(); } catch(_) {}
+  }
   const timer = setTimeout(() => {
     if (handled) return;
     handled = true;
+    cleanupProbe();
     if (fb) {
       if (msg) msg.textContent = `Site refused to be embedded: ${url}`;
       fb.style.display = "block";
     }
+    socket.emit("workspace_embed_failed", { url: url });
   }, 3000);
 
-  frame.addEventListener(
+  probe.addEventListener(
     "load",
     () => {
       if (handled) return;
       handled = true;
       clearTimeout(timer);
+      frame.src = url;
       if (fb) fb.style.display = "none";
+      cleanupProbe();
     },
     { once: true }
   );
+  probe.src = url;
 }
 
 if (!window.__mitchOpenUrlBound) {

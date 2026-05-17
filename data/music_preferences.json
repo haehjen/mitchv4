@@ -1,0 +1,80 @@
+{
+  "queries": {
+    "an ac/dc song": 1,
+    "ac/dc playlist": 1,
+    "the playlist of the guy making a realistic iron man suit in his garage": 1,
+    "on youtube": 1,
+    "cold blues playlist": 1,
+    "an iron man style playlist": 1,
+    "infinity quiz promo video": 1,
+    "iron man style": 1,
+    "iron man by black sabbath": 1
+  },
+  "artists": {
+    "acdcvevo": 1,
+    "classic rock collection": 1,
+    "alex lab": 1,
+    "jimmy kimmel live": 1,
+    "relaxing blues": 1,
+    "pteryxss": 1,
+    "rorx4k": 1,
+    "comic con news": 1,
+    "black sabbath - topic": 1
+  },
+  "recent": [
+    {
+      "ts": 1772741289,
+      "query": "an ac/dc song",
+      "title": "AC/DC - Thunderstruck (Official Video)",
+      "channel": "acdcVEVO"
+    },
+    {
+      "ts": 1773344434,
+      "query": "ac/dc playlist",
+      "title": "A.C.D.C Greatest Hits  - Top Best Songs Of A.C.D.C",
+      "channel": "Classic Rock Collection"
+    },
+    {
+      "ts": 1773528321,
+      "query": "the playlist of the guy making a realistic iron man suit in his garage",
+      "title": "Creating Iron Man suit. Full workflow by @AlexLab. Real life Iron Man exosuit with a box of scraps)",
+      "channel": "ALEX LAB"
+    },
+    {
+      "ts": 1774099270,
+      "query": "on youtube",
+      "title": "Trump Makes a Pearl Harbor Joke In Front of Japanese Prime Minister &amp; Is He Lying About Epstein!?",
+      "channel": "Jimmy Kimmel Live"
+    },
+    {
+      "ts": 1774099631,
+      "query": "cold blues playlist",
+      "title": "Best Blues Music - Beautilful Relaxing Blues Music -The Best of Slow Blues Rock Ballads",
+      "channel": "Relaxing Blues"
+    },
+    {
+      "ts": 1774196145,
+      "query": "an iron man style playlist",
+      "title": "TONY STARK / IRON MAN || \ud83c\udf7e || PLAYLIST",
+      "channel": "pteryxss"
+    },
+    {
+      "ts": 1774288070,
+      "query": "infinity quiz promo video",
+      "title": "TBS GAMER PROMO CODE #rorx4k",
+      "channel": "RorX4K"
+    },
+    {
+      "ts": 1778578901,
+      "query": "iron man style",
+      "title": "Iron Man cosplay \ud83e\udd16 #marvel #ironman #cosplay",
+      "channel": "Comic Con News"
+    },
+    {
+      "ts": 1778926070,
+      "query": "iron man by black sabbath",
+      "title": "Iron Man (2012 Remaster)",
+      "channel": "Black Sabbath - Topic"
+    }
+  ]
+}
