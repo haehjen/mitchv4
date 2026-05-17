@@ -174,6 +174,12 @@ def build_system_prompt(
     injection_exclude_prefixes=None,
 ):
     base = persona.build_system_prompt()
+    capability_truth = (
+        "\n\nCapability truthfulness:\n"
+        "- Never claim that you created, changed, injected, scheduled, opened, played, or otherwise executed a system action unless a real tool result or explicit system event in the current context proves it happened.\n"
+        "- If House asks for an action that no available intent/tool has actually performed, say plainly that you cannot currently do that yet, then offer the closest real option if one exists.\n"
+        "- You may discuss a plan, but distinguish proposed actions from completed actions with absolute clarity.\n"
+    )
     injections = load_prompt_injections(
         excluded_modules=excluded_modules,
         allowed_modules=allowed_modules,
@@ -183,8 +189,8 @@ def build_system_prompt(
         exclude_prefixes=injection_exclude_prefixes,
     )
     if injections:
-        return f"{base}\n\n\U0001F527 Active Prompt Injections:\n" + "\n".join(injections)
-    return base
+        return f"{base}{capability_truth}\n\n\U0001F527 Active Prompt Injections:\n" + "\n".join(injections)
+    return base + capability_truth
 
 
 def generate_token():
@@ -302,9 +308,13 @@ def _build_context_blocks(prompt: str, retrieved_context: str = ""):
         injection_exclude_prefixes={"file_"},
     )
     recent = memory.recall_recent(n=MEMORY_WINDOW, include_roles=True)
+    summaries = memory.recall_summaries(limit=3)
     facts = memory.recall_summary()
     fact_string = "\n".join(f"- {fact}" for fact in facts[:5])
+    summary_string = "\n".join(f"- {item.get('summary', '')}" for item in summaries if item.get("summary"))
     knowledge_context = f"The following facts are known and persistent:\n{fact_string}"
+    if summary_string:
+        knowledge_context += f"\n\nOlder conversation summaries:\n{summary_string}"
     retrieved_context_block = ""
     if isinstance(retrieved_context, str) and retrieved_context.strip():
         retrieved_context_block = (

@@ -326,7 +326,17 @@ def run_visual_server():
         log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)
 
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    # This is intentionally House's local embedded interface, not an internet-
+    # facing production Flask deployment. Newer Flask-SocketIO refuses Werkzeug
+    # unless that intent is explicit.
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=5000,
+        debug=False,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )
 
 def start_visual():
     run_visual_server()

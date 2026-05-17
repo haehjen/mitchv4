@@ -277,6 +277,23 @@ def _handle_refresh_request(_text):
     })
 
 
+def _handle_stop_press_test(_text):
+    """
+    Deliberate live-system test hook. This bypasses editorial classification
+    without weakening the real stop-press threshold.
+    """
+    item = {
+        'title': '[TEST] Synthetic priority one alert',
+        'subtitle': 'Synthetic stop-press event injected to verify interruption flow.',
+        'bucket': 'stop_press',
+        'priority': 1,
+        'url': '',
+        'why': 'manual test hook',
+    }
+    event_bus.emit('NEWS_STOP_PRESS_TEST_INJECTED', item)
+    _queue_or_emit([item])
+
+
 def _on_user_turn(data):
     if isinstance(data, dict):
         _learn_topics_from_text(str(data.get('text') or ''))
@@ -313,5 +330,11 @@ def start_module(bus):
     event_bus.subscribe('HOUSE_AWAY', _on_house_away)
     IntentRegistry.register_intent('news_digest', _handle_digest_request, keywords=['news digest','news rundown','latest headlines'], priority=70)
     IntentRegistry.register_intent('news_refresh', _handle_refresh_request, keywords=['refresh news','update news digest'], priority=70)
+    IntentRegistry.register_intent(
+        'news_stop_press_test',
+        _handle_stop_press_test,
+        keywords=['test stop press', 'test priority one news', 'inject test stop press'],
+        priority=80,
+    )
     threading.Thread(target=_loop, daemon=True, name='news_digest_loop').start()
     logger.info('News digest service online.')

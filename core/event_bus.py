@@ -16,6 +16,13 @@ INNERMONO_PATH = os.path.join(MITCH_ROOT, "logs", "innermono.log") if ENABLE_INN
 # Events that are noisy in console; muted from stdout (still logged to file)
 DEFAULT_MUTED_CONSOLE_EVENTS = {
     "EMIT_PUBLISH_DIGEST",
+    "PRESENCE_ACTIVITY",
+}
+
+# High-frequency housekeeping that should remain functional but does not add
+# value to the durable human-facing ledger on every heartbeat.
+DEFAULT_MUTED_INNERMONO_EVENTS = {
+    "PRESENCE_ACTIVITY",
 }
 
 class EventBus:
@@ -31,6 +38,7 @@ class EventBus:
             }
             self._preview_len = DEFAULT_PREVIEW_LEN
             self._muted_console = set(DEFAULT_MUTED_CONSOLE_EVENTS)
+            self._muted_innermono = set(DEFAULT_MUTED_INNERMONO_EVENTS)
 
     @classmethod
     def get_instance(cls):
@@ -52,6 +60,12 @@ class EventBus:
 
     def unmute_console(self, event_type: str):
         self._muted_console.discard(event_type)
+
+    def mute_innermono(self, event_type: str):
+        self._muted_innermono.add(event_type)
+
+    def unmute_innermono(self, event_type: str):
+        self._muted_innermono.discard(event_type)
 
     def subscribe(self, event_type, callback):
         callback_id = f"{callback.__module__}.{callback.__name__}"
@@ -91,7 +105,8 @@ class EventBus:
         if DEBUG and event_type not in self._muted_console:
             print(f"[{ts}] [EventBus] EMIT: {event_type} -> {preview}")
 
-        self._write_innermono(ts, event_type, data)
+        if event_type not in self._muted_innermono:
+            self._write_innermono(ts, event_type, data)
 
         for callback in list(self.listeners.get(event_type, [])):
             try:

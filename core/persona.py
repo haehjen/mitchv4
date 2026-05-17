@@ -13,7 +13,7 @@ LOG_DIR = Path(MITCH_ROOT) / "logs"
 DATA_DIR = Path(MITCH_ROOT) / "data"
 
 # === Bedrock Hash (LOCKED) ===
-BEDROCK_HASH = "58c7d17937977d55f39c747cec45e5336c7c73e58008341ff9e8115e125a1146"
+BEDROCK_HASH = "a551854336924fcbbb858fd9ca8dec3735827faaf2b98abdf3d2619ee71d8c40"
 
 def hash_persona():
     with open(PERSONA_FILE, "r", encoding="utf-8") as f:
