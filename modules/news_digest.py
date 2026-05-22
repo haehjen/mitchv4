@@ -196,6 +196,7 @@ def _headline_brief(items):
 
 
 def _queue_or_emit(items):
+    present_updates = []
     for item in items:
         bucket = item.get('bucket')
         priority = int(item.get('priority') or 4)
@@ -212,15 +213,7 @@ def _queue_or_emit(items):
             continue
         if bucket == 'store_for_later':
             if _house_present:
-                event_bus.emit('EMIT_TOOL_RESULT', {
-                    'tool_call_id': None,
-                    'function_name': 'news_update',
-                    'output': {
-                        'headline': item.get('title'),
-                        'subtitle': item.get('subtitle'),
-                        'url': item.get('url'),
-                    },
-                })
+                present_updates.append(item)
                 continue
             event_bus.emit('QUEUE_PENDING_UPDATE', {
                 'source': 'news_digest',
@@ -229,6 +222,25 @@ def _queue_or_emit(items):
                 'details': details,
                 'priority': 'high' if priority <= 2 else 'routine',
             })
+    if present_updates:
+        # House is present; speak once like an editor, not once per article.
+        # Stop-press items are handled above and still interrupt individually.
+        present_updates.sort(key=lambda item: int(item.get('priority') or 4))
+        event_bus.emit('EMIT_TOOL_RESULT', {
+            'tool_call_id': None,
+            'function_name': 'news_update_brief',
+            'output': {
+                'count': len(present_updates),
+                'headlines': [
+                    {
+                        'headline': item.get('title'),
+                        'subtitle': item.get('subtitle'),
+                        'url': item.get('url'),
+                    }
+                    for item in present_updates[:4]
+                ],
+            },
+        })
 
 
 def refresh_news(force=False):

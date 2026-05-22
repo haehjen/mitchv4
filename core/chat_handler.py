@@ -2,6 +2,8 @@ import threading
 import json
 import re
 import time
+import urllib.error
+import urllib.request
 from openai import OpenAI
 from pathlib import Path
 import os
@@ -47,6 +49,11 @@ if not os.getenv("OPENAI_API_KEY"):
 client = None
 
 OPENAI_MODEL = "gpt-4o"
+OLLAMA_BASE_URL = os.getenv("MITCH_OLLAMA_BASE_URL", "http://192.168.4.251:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("MITCH_OLLAMA_MODEL", "phi3:mini")
+OLLAMA_TIMEOUT = float(os.getenv("MITCH_OLLAMA_TIMEOUT", "75"))
+OLLAMA_INCLUDE_HISTORY = os.getenv("MITCH_OLLAMA_INCLUDE_HISTORY", "0").lower() in {"1", "true", "yes"}
+OLLAMA_MAX_PROMPT_CHARS = int(os.getenv("MITCH_OLLAMA_MAX_PROMPT_CHARS", "1800"))
 MEMORY_WINDOW = 8
 INJECTION_PATH = Path(MITCH_ROOT) / "data" / "injections"
 active_token = None
@@ -176,7 +183,9 @@ def build_system_prompt(
     base = persona.build_system_prompt()
     capability_truth = (
         "\n\nCapability truthfulness:\n"
+        "- Mitch can route available actions through the interpreter and event bus. Current core actions include YouTube search/playback control, web search, vision/camera questions, pending updates, news digest, Tarkov/wiki lookups, and explicit MiniPhi/local-model questions.\n"
         "- Never claim that you created, changed, injected, scheduled, opened, played, or otherwise executed a system action unless a real tool result or explicit system event in the current context proves it happened.\n"
+        "- If House asks for an available action but there is no tool result in the current context, do not deny the capability. Say the route did not fire or has not completed, then suggest the explicit command shape.\n"
         "- If House asks for an action that no available intent/tool has actually performed, say plainly that you cannot currently do that yet, then offer the closest real option if one exists.\n"
         "- You may discuss a plan, but distinguish proposed actions from completed actions with absolute clarity.\n"
     )
@@ -244,6 +253,7 @@ def handle_chat_request(data):
     retrieved_context = data.get("retrieved_context", "")
     force_openai_minimal = bool(data.get("force_openai_minimal"))
     request_type = data.get("request_type")
+    engine = str(data.get("engine", "") or data.get("model_route", "") or "").strip().lower()
     supplied_token = str(data.get("token", "") or "").strip()
     token = supplied_token or generate_token()
     active_token = token
@@ -257,11 +267,19 @@ def handle_chat_request(data):
             "request_type": request_type,
             "force_openai_minimal": force_openai_minimal,
             "input_source": input_source,
+            "engine": engine or "openai",
         },
     )
 
     try:
-        if force_openai_minimal:
+        if engine in {"ollama", "local", "local_phi", "miniphi", "phi", "phi3"}:
+            thread = threading.Thread(
+                target=stream_from_ollama,
+                args=(prompt, token, retrieved_context, input_source),
+                daemon=True,
+                name=f"ollama_chat_{token}",
+            )
+        elif force_openai_minimal:
             thread = threading.Thread(
                 target=stream_from_openai_minimal_rag,
                 args=(prompt, token, retrieved_context, request_type, input_source),
@@ -330,6 +348,117 @@ def _input_source_context(input_source: str) -> str:
         "HouseCore": "Current input channel: HouseCore.",
     }
     return source_labels.get(input_source, "")
+
+
+def _post_ollama_chat(messages: list[dict], model: str = OLLAMA_MODEL) -> dict:
+    payload = {
+        "model": model,
+        "stream": False,
+        "messages": messages,
+        "options": {
+            "temperature": 0.3,
+            "num_predict": 220,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as response:
+        raw = response.read().decode("utf-8", errors="replace")
+    return json.loads(raw)
+
+
+def stream_from_ollama(prompt, token, retrieved_context="", input_source="user"):
+    """
+    Explicit local sidecar route for the Phi/Ollama VM.
+
+    This intentionally does not replace the main Echo/OpenAI path. It gives
+    House a way to address the local model directly while preserving the same
+    event-bus return path into interpreter -> mouth/UI.
+    """
+    try:
+        input_source_context = _input_source_context(input_source)
+        normalized_recent = []
+        if OLLAMA_INCLUDE_HISTORY:
+            recent = memory.recall_recent(n=2, include_roles=True)
+            normalized_recent = _normalize_openai_history(recent)
+            for entry in normalized_recent:
+                entry["content"] = str(entry.get("content", ""))[:500]
+        facts = memory.recall_summary()
+        fact_string = "\n".join(f"- {fact}" for fact in facts[:4])
+
+        user_content = prompt
+        if retrieved_context:
+            user_content = (
+                f"{prompt}\n\n"
+                f"Reference context:\n{str(retrieved_context).strip()}\n\n"
+                "Use the reference only if relevant."
+            )
+        if input_source_context:
+            user_content = f"{input_source_context}\n\n{user_content}"
+        if len(user_content) > OLLAMA_MAX_PROMPT_CHARS:
+            user_content = user_content[:OLLAMA_MAX_PROMPT_CHARS] + "\n\n[Prompt truncated for local model.]"
+
+        system_content = (
+            "You are MiniPhi, a local Phi model reachable from Mitch over Ollama. "
+            "Answer plainly and concisely. Do not claim to control Mitch tools, "
+            "audio, browser UI, files, reminders, music, or cameras. If asked to "
+            "perform an action, explain that you can only provide text unless a "
+            "separate Mitch tool handles it.\n\n"
+            f"Known durable facts, if relevant:\n{fact_string or '- none'}"
+        )
+        messages = [
+            {"role": "system", "content": system_content},
+            *normalized_recent[-4:],
+            {"role": "user", "content": user_content},
+        ]
+
+        started = time.time()
+        result = _post_ollama_chat(messages)
+        elapsed_ms = int((time.time() - started) * 1000)
+        response_buffer = (
+            ((result.get("message") or {}).get("content"))
+            or result.get("response")
+            or ""
+        ).strip()
+        if not response_buffer:
+            raise RuntimeError("Ollama returned an empty response.")
+
+        emit_assistant_response("message", token, text=response_buffer, source="ollama_phi3")
+        _emit_contextual_chat_events(
+            "assistant_output",
+            response_buffer,
+            token,
+            {"engine": "ollama_phi3"},
+        )
+        _emit_token_diagnostics(
+            token,
+            "ollama_phi3",
+            {
+                "model": result.get("model", OLLAMA_MODEL),
+                "host": OLLAMA_BASE_URL,
+                "history_chars": sum(len(str(entry.get("content", ""))) for entry in normalized_recent[-4:]),
+                "knowledge_chars": len(fact_string),
+                "user_chars": len(user_content),
+                "prompt_total_chars": len(system_content) + len(user_content),
+                "response_chars": len(response_buffer),
+                "elapsed_ms": elapsed_ms,
+                "eval_count": result.get("eval_count"),
+                "prompt_eval_count": result.get("prompt_eval_count"),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Ollama/Phi chat error: {e}")
+        emit_assistant_response(
+            "message",
+            token,
+            text="MiniPhi is configured, but the local Ollama request failed.",
+            source="ollama_phi3",
+        )
 
 
 def stream_from_openai(prompt, token, retrieved_context="", input_source="user"):
@@ -539,6 +668,7 @@ def _build_tool_narration_prompt(tool_name: str, output: str):
         "A backend tool just returned data. Respond as Echo with calm, dry wit and service-first tone.\n"
         "Rules:\n"
         "- Preserve all factual tool details; do not invent values.\n"
+        "- For YouTube/music control results, treat successful play/pause/resume/stop/next actions as completed unless the tool output says blocked/error/not_found.\n"
         "- Prefer concise bullet points for status/metrics.\n"
         "- If output is raw JSON/dict, summarize key fields clearly.\n"
         "- Do not mention system prompts or internal events.\n\n"

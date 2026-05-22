@@ -16,3 +16,5 @@ data/reminders.json
 data/memory_summaries.jsonl
 
 data/knowledge.json
+
+logs/

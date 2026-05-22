@@ -3,7 +3,7 @@ import re
 import time
 import json
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 
 import requests
 
@@ -15,6 +15,7 @@ logger = get_logger("youtube_music_skill")
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "").strip()
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 PREFS_PATH = Path(MITCH_ROOT) / "data" / "music_preferences.json"
 PREF_MAX_RECENT = 80
 STOP_WORDS = {
@@ -117,41 +118,125 @@ def _emit_music_command(action: str, **kwargs):
     _bus.emit("EMIT_MUSIC_COMMAND", payload)
 
 
+def _extract_youtube_video_id(text: str) -> str:
+    t = str(text or "")
+    m = re.search(r"https?://[^\s]+", t, flags=re.IGNORECASE)
+    if not m:
+        return ""
+    raw = m.group(0).strip().rstrip(".,)]\"'")
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    host = parsed.netloc.lower().split(":", 1)[0]
+    path = parsed.path or ""
+    if host.endswith("youtu.be"):
+        return path.strip("/").split("/", 1)[0][:32]
+    if "youtube.com" not in host:
+        return ""
+    query_video = (parse_qs(parsed.query).get("v") or [""])[0].strip()
+    if query_video:
+        return query_video[:32]
+    m_path = re.search(r"/(?:embed|shorts|live)/([^/?#]+)", path)
+    if m_path:
+        return m_path.group(1).strip()[:32]
+    return ""
+
+
+def _get_youtube_video(video_id: str):
+    vid = str(video_id or "").strip()
+    if not vid or not YOUTUBE_API_KEY:
+        return {"video_id": vid, "title": "requested YouTube video", "channel": "", "queue": []} if vid else None
+    params = {
+        "part": "snippet,status",
+        "id": vid,
+        "key": YOUTUBE_API_KEY,
+    }
+    url = f"{YOUTUBE_VIDEOS_URL}?{urlencode(params)}"
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json() if r.content else {}
+    items = data.get("items", []) if isinstance(data, dict) else []
+    if not items:
+        return {"video_id": vid, "title": "requested YouTube video", "channel": "", "queue": []}
+    item = items[0] if isinstance(items[0], dict) else {}
+    snippet = item.get("snippet") or {}
+    status = item.get("status") or {}
+    if status and status.get("embeddable") is False:
+        return {
+            "video_id": vid,
+            "title": str(snippet.get("title") or "requested YouTube video").strip(),
+            "channel": str(snippet.get("channelTitle") or "").strip(),
+            "queue": [],
+            "embeddable": False,
+        }
+    return {
+        "video_id": vid,
+        "title": str(snippet.get("title") or "requested YouTube video").strip(),
+        "channel": str(snippet.get("channelTitle") or "").strip(),
+        "queue": [],
+        "embeddable": True,
+    }
+
+
+def _clean_query_tail(q: str) -> str:
+    q = str(q or "").strip()
+    q = re.sub(r"https?://[^\s]+", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"\s+on\s+youtube(?:\s+music)?$", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"^(?:for|about)\s+", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"^something\b", "", q, flags=re.IGNORECASE).strip()
+    return q
+
+
 def _extract_query(text: str) -> str:
     t = str(text or "").strip()
     t = re.sub(r"^[^a-zA-Z0-9]*(echo[:,\s-]*)?", "", t, flags=re.IGNORECASE)
 
     m = re.search(
-        r"\b(?:play|put on|start)\s+(?:a\s+|my\s+)?(?:song\s+|music\s+|playlist\s+)?(.+)$",
+        r"\b(?:play|put on|start|queue up)\s+(?:a\s+|my\s+)?(?:song\s+|music\s+|playlist\s+|video\s+)?(.+)$",
         t,
         flags=re.IGNORECASE,
     )
     if m:
-        q = m.group(1).strip()
-        q = re.sub(r"\s+on\s+youtube(?:\s+music)?$", "", q, flags=re.IGNORECASE).strip()
-        q = re.sub(r"^something\b", "", q, flags=re.IGNORECASE).strip()
-        return q
+        return _clean_query_tail(m.group(1))
     m = re.search(
         r"\b(?:play\s+)?playlist\s+(.+)$",
         t,
         flags=re.IGNORECASE,
     )
     if m:
-        q = m.group(1).strip()
-        q = re.sub(r"\s+on\s+youtube(?:\s+music)?$", "", q, flags=re.IGNORECASE).strip()
-        return q
+        return _clean_query_tail(m.group(1))
     m = re.search(
         r"\b(?:choose|pick)\s+(?:a\s+)?song(?:\s+for\s+me)?\s+(?:from|on)\s+youtube(?:\s+music)?(?:\s*[:\-]?\s*(.+))?$",
         t,
         flags=re.IGNORECASE,
     )
     if m:
-        tail = (m.group(1) or "").strip()
+        tail = _clean_query_tail(m.group(1) or "")
         return tail or "popular music mix"
+    m = re.search(
+        r"\b(?:find|search(?:\s+for)?|look\s+for|get)\s+(?:me\s+)?(.+?)\s+(?:on|from)\s+youtube(?:\s+music)?\b",
+        t,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        return _clean_query_tail(m.group(1))
+    m = re.search(
+        r"\byoutube(?:\s+music)?\s+(?:for\s+)?(.+)$",
+        t,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        return _clean_query_tail(m.group(1))
     return ""
 
 
-def _search_youtube_video(query: str):
+def _looks_live_request(text: str) -> bool:
+    low = str(text or "").lower()
+    return any(x in low for x in ("live stream", "livestream", "live feed", "live coverage", "live on youtube"))
+
+
+def _search_youtube_video(query: str, live: bool = False):
     if not YOUTUBE_API_KEY:
         raise RuntimeError("YOUTUBE_API_KEY is not configured.")
 
@@ -164,6 +249,8 @@ def _search_youtube_video(query: str):
         "videoEmbeddable": "true",
         "safeSearch": "none",
     }
+    if live:
+        params["eventType"] = "live"
     url = f"{YOUTUBE_SEARCH_URL}?{urlencode(params)}"
     r = requests.get(url, timeout=10)
     r.raise_for_status()
@@ -221,9 +308,48 @@ def _handle_music_intent(text: str):
         _emit_music_command("stop")
         _emit_tool_result("stop", "Stopped.")
         return
-    if any(x in low for x in ("next song", "skip song", "skip track", "next track")):
+    if any(x in low for x in ("next song", "skip song", "skip track", "next track", "next video", "skip video", "next youtube", "skip youtube")):
         _emit_music_command("next")
-        _emit_tool_result("next", "Skipping.")
+        _emit_tool_result("next", "Skipping to the next queued YouTube item.")
+        return
+
+    direct_video_id = _extract_youtube_video_id(msg)
+    if direct_video_id:
+        try:
+            result = _get_youtube_video(direct_video_id)
+        except Exception as e:
+            logger.warning(f"YouTube video lookup failed: {e}")
+            result = {"video_id": direct_video_id, "title": "requested YouTube video", "channel": "", "queue": []}
+        if result and result.get("embeddable") is False:
+            _emit_tool_result(
+                "blocked",
+                "That YouTube video exists, but it is not embeddable in the Mitch viewer. I left the current player alone.",
+                video_id=direct_video_id,
+                title=result.get("title", ""),
+                channel=result.get("channel", ""),
+            )
+            return
+        title = (result or {}).get("title") or "requested YouTube video"
+        channel = (result or {}).get("channel") or ""
+        _emit_music_command(
+            "play",
+            video_id=direct_video_id,
+            title=title,
+            channel=channel,
+            query="direct YouTube URL",
+            queue=[],
+        )
+        _record_preference("direct YouTube URL", title, channel)
+        message = f"Playing {title} by {channel}." if channel else f"Playing {title}."
+        _emit_tool_result(
+            "play",
+            message,
+            query="direct YouTube URL",
+            title=title,
+            channel=channel,
+            video_id=direct_video_id,
+            queued=0,
+        )
         return
 
     query = _extract_query(msg)
@@ -236,7 +362,7 @@ def _handle_music_intent(text: str):
         return
 
     try:
-        result = _search_youtube_video(query)
+        result = _search_youtube_video(query, live=_looks_live_request(msg))
     except Exception as e:
         logger.warning(f"YouTube search failed: {e}")
         _emit_tool_result("error", _friendly_search_error(e), query=query)
@@ -297,12 +423,26 @@ def start_module(event_bus):
             "stop music",
             "next song",
             "skip song",
+            "next video",
+            "skip video",
+            "next youtube",
+            "skip youtube",
             "youtube music",
+            "find on youtube",
+            "search on youtube",
+            "look for on youtube",
+            "youtube live stream",
+            "live stream on youtube",
+            "youtube live feed",
         ],
         patterns=[
+            r"https?://(?:www\.)?(?:youtube\.com|youtu\.be)/\S+",
             r"^play\s+\S.+$",
             r"^put on\s+\S.+$",
             r"^start\s+\S.+$",
+            r"\b(?:find|search(?:\s+for)?|look\s+for|get)\s+.+\s+(?:on|from)\s+youtube(?:\s+music)?\b",
+            r"\byoutube(?:\s+music)?\s+.+\blive\s+(?:stream|feed)\b",
+            r"\blive\s+(?:stream|feed)\s+.+\bon\s+youtube\b",
         ],
         objects=[],
         priority=120,

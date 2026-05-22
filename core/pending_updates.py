@@ -1,6 +1,8 @@
 import hashlib
 import json
+import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,9 +15,14 @@ logger = get_logger("pending_updates")
 
 PENDING_UPDATES_PATH = Path(MITCH_ROOT) / "data" / "pending_updates.json"
 MAX_ITEMS = 100
+AUTO_DELIVERY_IDLE_SECONDS = float(os.getenv("MITCH_PENDING_AUTO_IDLE_SECONDS", "12"))
+AUTO_DELIVERY_RETRY_SECONDS = float(os.getenv("MITCH_PENDING_AUTO_RETRY_SECONDS", "5"))
 
 _lock = threading.Lock()
 _started = False
+_last_user_turn_at = 0.0
+_active_chat_requests = 0
+_auto_delivery_timer = None
 
 
 def _now() -> str:
@@ -127,6 +134,36 @@ def deliver_pending(reason: str):
         _mark_delivered(items)
 
 
+def _is_user_or_chat_busy() -> bool:
+    with _lock:
+        since_user_turn = time.time() - _last_user_turn_at if _last_user_turn_at else 999999.0
+        active = _active_chat_requests
+    return active > 0 or since_user_turn < AUTO_DELIVERY_IDLE_SECONDS
+
+
+def _schedule_auto_delivery(reason: str):
+    global _auto_delivery_timer
+
+    def _attempt():
+        global _auto_delivery_timer
+        with _lock:
+            _auto_delivery_timer = None
+        if not pending_items():
+            return
+        if _is_user_or_chat_busy():
+            _schedule_auto_delivery(reason)
+            return
+        logger.info(f"Delivering pending updates after idle gate: {reason}")
+        deliver_pending(reason)
+
+    with _lock:
+        if _auto_delivery_timer and _auto_delivery_timer.is_alive():
+            return
+        _auto_delivery_timer = threading.Timer(AUTO_DELIVERY_RETRY_SECONDS, _attempt)
+        _auto_delivery_timer.daemon = True
+        _auto_delivery_timer.start()
+
+
 def handle_pending_update(data):
     if not isinstance(data, dict):
         return
@@ -140,8 +177,31 @@ def handle_pending_update(data):
 
 
 def handle_house_returned(_data):
-    if pending_items():
-        deliver_pending("house_returned")
+    if not pending_items():
+        return
+    if _is_user_or_chat_busy():
+        logger.info("Deferring pending updates until user/chat turn is idle.")
+        _schedule_auto_delivery("house_returned_deferred")
+        return
+    deliver_pending("house_returned")
+
+
+def handle_user_turn(_data):
+    global _last_user_turn_at
+    with _lock:
+        _last_user_turn_at = time.time()
+
+
+def handle_chat_request(_data):
+    global _active_chat_requests
+    with _lock:
+        _active_chat_requests += 1
+
+
+def handle_assistant_response(_data):
+    global _active_chat_requests
+    with _lock:
+        _active_chat_requests = max(0, _active_chat_requests - 1)
 
 
 def _handle_manual_catchup(_text: str):
@@ -155,6 +215,9 @@ def start_pending_updates():
     _started = True
     event_bus.subscribe("QUEUE_PENDING_UPDATE", handle_pending_update)
     event_bus.subscribe("HOUSE_RETURNED", handle_house_returned)
+    event_bus.subscribe("USER_TURN_ACCEPTED", handle_user_turn)
+    event_bus.subscribe("EMIT_CHAT_REQUEST", handle_chat_request)
+    event_bus.subscribe("EMIT_ASSISTANT_RESPONSE", handle_assistant_response)
     IntentRegistry.register_intent(
         "pending_updates",
         _handle_manual_catchup,

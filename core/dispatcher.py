@@ -108,13 +108,19 @@ IntentRegistry.register_intent(
     "describe_scene",
     _describe_scene_intent,
     keywords=[
-        "what can you see",
-        "what do you see",
-        "can you see me",
+        "camera view",
+        "camera scene",
         "look through the camera",
         "describe the scene",
         "describe what you see",
         "see me through the camera",
+    ],
+    patterns=[
+        r"^(?:echo\s+)?what\s+(?:can|do)\s+you\s+see\s*\??$",
+        r"^(?:echo\s+)?can\s+you\s+see\s+me\s*\??$",
+        r"^(?:echo\s+)?(?:look|peek)\s+(?:through|at|via)\s+(?:the\s+)?camera\s*\??$",
+        r"^(?:echo\s+)?describe\s+(?:the\s+)?(?:scene|camera|camera\s+view|what\s+you\s+see)\s*\??$",
+        r"^(?:echo\s+)?what\s+(?:can|do)\s+you\s+see\s+(?:through|on|in|with|via)\s+(?:the\s+)?camera\s*\??$",
     ],
     priority=20,
 )
@@ -124,10 +130,16 @@ IntentRegistry.register_intent(
     _detect_objects_intent,
     keywords=[
         "detect objects",
-        "what objects can you see",
-        "what objects do you see",
+        "visible objects",
+        "camera objects",
         "list visible objects",
-        "what is in front of you",
+    ],
+    patterns=[
+        r"^(?:echo\s+)?detect\s+objects\s*\??$",
+        r"^(?:echo\s+)?(?:what|which)\s+objects\s+(?:can|do)\s+you\s+see\s*\??$",
+        r"^(?:echo\s+)?list\s+(?:the\s+)?visible\s+objects\s*\??$",
+        r"^(?:echo\s+)?what\s+is\s+in\s+front\s+of\s+you\s*\??$",
+        r"^(?:echo\s+)?(?:what|which)\s+objects\s+(?:can|do)\s+you\s+see\s+(?:through|on|in|with|via)\s+(?:the\s+)?camera\s*\??$",
     ],
     priority=20,
 )
